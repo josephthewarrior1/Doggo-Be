@@ -43,11 +43,6 @@ try {
 const auth = admin.auth();
 const db = admin.database();
 
-// Helper function to make email safe for Firebase keys
-function makeEmailKey(email) {
-  return email.replace(/[.#$\/\[\]]/g, '_');
-}
-
 // Test route
 app.get('/', (req, res) => {
   res.json({ 
@@ -67,7 +62,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Sign Up - Store with email as key
+// Sign Up - Dengan AUTO-INCREMENT ID + UID
 app.post('/api/signup', async (req, res) => {
   try {
     console.log('📨 Sign up attempt:', req.body.email);
@@ -81,7 +76,19 @@ app.post('/api/signup', async (req, res) => {
       });
     }
 
-    // Firebase Auth - Create user
+    // 1. Dapatkan next ID dari counter
+    const counterRef = db.ref('counters/users');
+    const counterSnapshot = await counterRef.once('value');
+    let nextId = 1;
+    
+    if (counterSnapshot.exists()) {
+      nextId = counterSnapshot.val() + 1;
+    }
+    
+    // 2. Update counter untuk next time
+    await counterRef.set(nextId);
+
+    // 3. Firebase Auth - Create user (akan generate UID)
     console.log('🔐 Creating user in Firebase Auth...');
     const userRecord = await auth.createUser({
       email: email,
@@ -90,33 +97,35 @@ app.post('/api/signup', async (req, res) => {
       disabled: false
     });
 
-    console.log('✅ User created in Auth:', userRecord.uid);
+    console.log('✅ User created in Auth with UID:', userRecord.uid);
 
-    // ✅ REALTIME DATABASE - Save user data using email as key
-    const emailKey = makeEmailKey(email);
-    console.log('💾 Saving user data to Realtime Database with key:', emailKey);
+    // 4. ✅ REALTIME DATABASE - Save user data dengan BOTH ID dan UID
+    console.log('💾 Saving user data with ID:', nextId);
     
-    const userRef = db.ref('users/' + emailKey);
+    const userRef = db.ref('users/' + nextId);  // PAKAI AUTO-INCREMENT ID sebagai key
     
     await userRef.set({
+      id: nextId,           // ← AUTO-INCREMENT ID (1, 2, 3, ...) - untuk tampilan
+      uid: userRecord.uid,  // ← Firebase UID - untuk authentication
       email: email,
-      uid: userRecord.uid, // Simpan UID juga untuk reference
       createdAt: new Date().toISOString(),
       lastLogin: new Date().toISOString()
     });
 
-    console.log('✅ User data saved to Realtime Database');
+    console.log('✅ User data saved with ID:', nextId, 'and UID:', userRecord.uid);
 
-    // Create custom token
+    // Create custom token (pakai UID)
     const customToken = await auth.createCustomToken(userRecord.uid);
 
-    console.log('🎉 Sign up completed for:', email);
+    console.log('🎉 Sign up completed for:', email, 'with ID:', nextId);
     
     res.json({
       success: true,
       message: 'Account created successfully!',
       token: customToken,
-      userId: userRecord.uid
+      userId: nextId,       // Kirim ID (1, 2, 3) ke Android untuk display
+      userDbId: nextId,
+      uid: userRecord.uid   // Kirim juga UID untuk reference
     });
 
   } catch (error) {
@@ -141,7 +150,7 @@ app.post('/api/signup', async (req, res) => {
   }
 });
 
-// Sign In - Update using email as key
+// Sign In - Dengan AUTO-INCREMENT ID + UID
 app.post('/api/signin', async (req, res) => {
   try {
     console.log('📨 Sign in attempt:', req.body.email);
@@ -155,30 +164,48 @@ app.post('/api/signin', async (req, res) => {
       });
     }
 
-    // Get user by email from Firebase Auth
+    // Get user by email from Firebase Auth (pakai UID)
     console.log('🔍 Looking up user by email...');
     const user = await auth.getUserByEmail(email);
     
-    console.log('✅ User found in Auth:', user.uid);
+    console.log('✅ User found in Auth with UID:', user.uid);
 
-    // ✅ REALTIME DATABASE - Update last login using email as key
-    const emailKey = makeEmailKey(email);
-    const userRef = db.ref('users/' + emailKey);
+    // Cari user by email di database untuk dapat ID-nya
+    const usersRef = db.ref('users');
+    const snapshot = await usersRef.orderByChild('email').equalTo(email).once('value');
     
-    await userRef.update({
+    let userDbId = null;
+    let userData = null;
+    
+    snapshot.forEach((childSnapshot) => {
+      userDbId = childSnapshot.key;  // Ini ID-nya (1, 2, 3, ...)
+      userData = childSnapshot.val();
+    });
+
+    if (!userData) {
+      return res.status(400).json({
+        success: false,
+        error: 'User data not found in database'
+      });
+    }
+
+    // Update last login
+    await usersRef.child(userDbId).update({
       lastLogin: new Date().toISOString()
     });
 
-    // Create custom token
+    // Create custom token (pakai UID)
     const customToken = await auth.createCustomToken(user.uid);
 
-    console.log('✅ Sign in successful for:', email);
+    console.log('✅ Sign in successful for:', email, 'ID:', userDbId, 'UID:', user.uid);
     
     res.json({
       success: true,
       message: 'Welcome back!',
       token: customToken,
-      userId: user.uid
+      userId: userDbId,     // Kirim ID (1, 2, 3) ke Android untuk display
+      userDbId: userDbId,
+      uid: user.uid        // Kirim juga UID untuk reference
     });
   } catch (error) {
     console.error('❌ Sign in error:', error.message);
@@ -202,11 +229,10 @@ app.post('/api/signin', async (req, res) => {
   }
 });
 
-// Get user by email
-app.get('/api/user/:email', async (req, res) => {
+// Get user by ID
+app.get('/api/user/:id', async (req, res) => {
   try {
-    const emailKey = makeEmailKey(req.params.email);
-    const userRef = db.ref('users/' + emailKey);
+    const userRef = db.ref('users/' + req.params.id);
     
     const snapshot = await userRef.once('value');
     const userData = snapshot.val();
@@ -221,6 +247,25 @@ app.get('/api/user/:email', async (req, res) => {
     res.json({
       success: true,
       user: userData
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get all users
+app.get('/api/users', async (req, res) => {
+  try {
+    const usersRef = db.ref('users');
+    const snapshot = await usersRef.once('value');
+    const users = snapshot.val();
+    
+    res.json({
+      success: true,
+      users: users || {}
     });
   } catch (error) {
     res.status(500).json({
