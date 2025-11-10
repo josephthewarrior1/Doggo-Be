@@ -4,19 +4,41 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(bodyParser.json());
 
 // Inisialisasi Firebase Admin
-const serviceAccount = require('./serviceAccountKey.json');
+let serviceAccount;
+if (process.env.NODE_ENV === 'production') {
+  // For Vercel - menggunakan environment variables
+  serviceAccount = {
+    type: "service_account",
+    project_id: process.env.FIREBASE_PROJECT_ID || "doggoapp-d4a68",
+    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+    private_key: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+    client_id: process.env.FIREBASE_CLIENT_ID,
+    auth_uri: "https://accounts.google.com/o/oauth2/auth",
+    token_uri: "https://oauth2.googleapis.com/token",
+    auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
+    client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL
+  };
+} else {
+  // For local development
+  serviceAccount = require('./serviceAccountKey.json');
+}
 
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://doggoapp-d4a68-default-rtdb.asia-southeast1.firebasedatabase.app"
-});
+try {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+    databaseURL: "https://doggoapp-d4a68-default-rtdb.asia-southeast1.firebasedatabase.app"
+  });
+  console.log('✅ Firebase Admin initialized successfully');
+} catch (error) {
+  console.log('❌ Firebase Admin initialization failed:', error.message);
+}
 
 const auth = admin.auth();
 const db = admin.database();
@@ -25,6 +47,25 @@ const db = admin.database();
 function makeEmailKey(email) {
   return email.replace(/[.#$\/\[\]]/g, '_');
 }
+
+// Test route
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Doggo Backend API is running!',
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK',
+    service: 'Doggo Authentication API',
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
 
 // Sign Up - Store with email as key
 app.post('/api/signup', async (req, res) => {
@@ -215,10 +256,13 @@ app.get('/api/database-status', async (req, res) => {
   }
 });
 
+// Handle Vercel deployment
+const PORT = process.env.PORT || 3000;
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📱 API ready at http://localhost:${PORT}`);
-  console.log(`🏠 Home: http://localhost:${PORT}/`);
-  console.log(`💾 Database: Realtime Database (Email as Key)`);
-  console.log(`🔧 Status: http://localhost:${PORT}/api/database-status`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
+
+// Export for Vercel
+module.exports = app;
