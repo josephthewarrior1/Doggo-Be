@@ -275,6 +275,167 @@ app.get('/api/users', async (req, res) => {
   }
 });
 
+// Proper token verification middleware
+const verifyToken = async (req, res, next) => {
+    try {
+      const authHeader = req.headers.authorization;
+      
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+          success: false,
+          error: 'No token provided'
+        });
+      }
+  
+      const token = authHeader.split('Bearer ')[1];
+      
+      if (!token) {
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid token format'
+        });
+      }
+  
+      // Verify token dengan Firebase Admin
+      const decodedToken = await auth.verifyIdToken(token);
+      req.user = decodedToken;
+      
+      console.log('✅ Token verified for user:', decodedToken.uid);
+      next();
+    } catch (error) {
+      console.error('❌ Token verification failed:', error.message);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid or expired token'
+      });
+    }
+  };
+  
+  // Get user info from token (untuk dapat user ID)
+  const getUserFromToken = async (req, res, next) => {
+    try {
+      const authHeader = req.headers.authorization;
+      
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({
+          success: false,
+          error: 'No token provided'
+        });
+      }
+  
+      const token = authHeader.split('Bearer ')[1];
+      const decodedToken = await auth.verifyIdToken(token);
+      
+      // Cari user di database berdasarkan UID dari token
+      const usersRef = db.ref('users');
+      const snapshot = await usersRef.orderByChild('uid').equalTo(decodedToken.uid).once('value');
+      
+      let userData = null;
+      let userId = null;
+      
+      snapshot.forEach((childSnapshot) => {
+        userId = childSnapshot.key;
+        userData = childSnapshot.val();
+      });
+  
+      if (!userData) {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found in database'
+        });
+      }
+  
+      req.userId = parseInt(userId);
+      req.userData = userData;
+      next();
+    } catch (error) {
+      console.error('❌ Get user from token failed:', error.message);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid token'
+      });
+    }
+  };
+  
+  // Add new dog dengan token auth
+  app.post('/api/dogs', verifyToken, getUserFromToken, async (req, res) => {
+    try {
+      console.log('🐶 Add dog attempt for user:', req.userId);
+      
+      const { name, breed, age, birthDate, photo } = req.body;
+  
+      if (!name) {
+        return res.status(400).json({ 
+          success: false,
+          error: 'Dog name is required' 
+        });
+      }
+  
+      // 1. Dapatkan next ID dari counter
+      const counterRef = db.ref('counters/dogs');
+      const counterSnapshot = await counterRef.once('value');
+      let nextId = 1;
+      
+      if (counterSnapshot.exists()) {
+        nextId = counterSnapshot.val() + 1;
+      }
+      
+      // 2. Update counter untuk next time
+      await counterRef.set(nextId);
+  
+      // 3. Save dog data ke database dengan ownerId dari token
+      const dogRef = db.ref('dogs/' + nextId);
+      
+      await dogRef.set({
+        dogId: nextId,
+        name: name,
+        breed: breed || '',
+        age: age || 0,
+        birthDate: birthDate || '',
+        photo: photo || '',
+        ownerId: req.userId, // PAKAI USER ID DARI TOKEN
+        createdAt: new Date().toISOString()
+      });
+  
+      console.log('✅ Dog data saved with ID:', nextId, 'for user:', req.userId);
+      
+      res.json({
+        success: true,
+        message: 'Dog added successfully!',
+        dogId: nextId
+      });
+  
+    } catch (error) {
+      console.error('❌ Add dog error:', error.message);
+      
+      res.status(400).json({
+        success: false,
+        error: `Add dog failed: ${error.message}`
+      });
+    }
+  });
+  
+  // Get dogs by owner dengan token auth
+  app.get('/api/my-dogs', verifyToken, getUserFromToken, async (req, res) => {
+    try {
+      const ownerId = req.userId;
+      const dogsRef = db.ref('dogs');
+      
+      const snapshot = await dogsRef.orderByChild('ownerId').equalTo(ownerId).once('value');
+      const dogs = snapshot.val();
+      
+      res.json({
+        success: true,
+        dogs: dogs || {}
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  });
+
 // Test Realtime Database connection
 app.get('/api/database-status', async (req, res) => {
   try {
