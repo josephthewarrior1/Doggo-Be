@@ -433,6 +433,34 @@ app.get('/api/my-dogs', verifyCustomToken, async (req, res) => {
     }
 });
 
+// ✅ NEW: Get single dog by ID
+app.get('/api/dogs/:id', verifyCustomToken, async (req, res) => {
+  try {
+      const dogId = req.params.id;
+      const dogRef = db.ref('dogs/' + dogId);
+      
+      const snapshot = await dogRef.once('value');
+      const dogData = snapshot.val();
+      
+      if (!dogData) {
+          return res.status(404).json({
+              success: false,
+              error: 'Dog not found'
+          });
+      }
+      
+      res.json({
+          success: true,
+          dog: dogData
+      });
+  } catch (error) {
+      res.status(500).json({
+          success: false,
+          error: error.message
+      });
+  }
+});
+
 // Test Realtime Database connection
 app.get('/api/database-status', async (req, res) => {
   try {
