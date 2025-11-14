@@ -5,7 +5,16 @@ class DogController {
     try {
       console.log('🐶 Add dog attempt for user:', req.userId);
 
-      const { name, breed, age, birthDate, photo, weight, schedule } = req.body;
+      const {
+        name,
+        breed,
+        age,
+        birthDate,
+        photo,
+        weight,
+        gender, // NEW: Gender field
+        schedule,
+      } = req.body;
 
       if (!name) {
         return res.status(400).json({
@@ -25,9 +34,9 @@ class DogController {
         age: age || 0,
         birthDate: birthDate || '',
         photo: photo || '',
-        weight: weight || 0, // NEW: Weight field
+        weight: weight || 0,
+        gender: gender || '', // NEW: Gender field (male/female)
         schedule: schedule || {
-          // NEW: Schedule object
           eat: [],
           walk: [],
           sleep: [],
@@ -66,7 +75,16 @@ class DogController {
       console.log('🐶 Update dog attempt for dog:', req.params.id);
 
       const dogId = req.params.id;
-      const { name, breed, age, birthDate, photo, weight, schedule } = req.body;
+      const {
+        name,
+        breed,
+        age,
+        birthDate,
+        photo,
+        weight,
+        gender, // NEW: Gender field
+        schedule,
+      } = req.body;
 
       // Check if dog exists and belongs to user
       const existingDog = await dogDao.getDogById(dogId);
@@ -93,6 +111,7 @@ class DogController {
         ...(birthDate !== undefined && { birthDate }),
         ...(photo !== undefined && { photo }),
         ...(weight !== undefined && { weight }),
+        ...(gender !== undefined && { gender }), // NEW: Gender field
         ...(schedule !== undefined && { schedule }),
         updatedAt: new Date().toISOString(),
       };
