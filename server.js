@@ -9,6 +9,7 @@ require('./config/firebase');
 const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const dogRoutes = require('./routes/dogRoutes');
+const medicalRecordRoutes = require('./routes/medicalRecordRoutes'); // NEW
 const systemRoutes = require('./routes/systemRoutes');
 
 const app = express();
@@ -22,6 +23,7 @@ app.use('/', systemRoutes);
 app.use('/api', authRoutes);
 app.use('/api', userRoutes);
 app.use('/api', dogRoutes);
+app.use('/api', medicalRecordRoutes); // NEW
 
 // Handle Vercel deployment
 const PORT = process.env.PORT || 3000;
