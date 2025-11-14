@@ -4,20 +4,21 @@ const userDao = require('../daos/userDao');
 class AuthController {
   async signUp(req, res) {
     try {
-      console.log('📨 Sign up attempt:', req.body.email);
-
-      const { email, password } = req.body;
-
+      console.log('📨 Sign up attempt:', req.body);
+  
+      // TAMBAH username & name di sini
+      const { email, password, username, name } = req.body;
+  
       if (!email || !password) {
         return res.status(400).json({
           success: false,
           error: 'Please fill all fields',
         });
       }
-
+  
       // Get next ID from counter
       const nextId = await userDao.getNextUserId();
-
+  
       // Create user in Firebase Auth
       console.log('🔐 Creating user in Firebase Auth...');
       const userRecord = await auth.createUser({
@@ -26,34 +27,36 @@ class AuthController {
         emailVerified: false,
         disabled: false,
       });
-
+  
       console.log('✅ User created in Auth with UID:', userRecord.uid);
-
-      // Save user data to database
+  
+      // Save user data to database - TAMBAH username & name
       console.log('💾 Saving user data with ID:', nextId);
-
+  
       const userData = {
         id: nextId,
         uid: userRecord.uid,
         email: email,
+        username: username || '', // ← INI YANG DITAMBAH
+        name: name || '',         // ← INI JUGA
         createdAt: new Date().toISOString(),
         lastLogin: new Date().toISOString(),
       };
-
+  
       await userDao.createUser(nextId, userData);
-
+  
       console.log(
         '✅ User data saved with ID:',
         nextId,
         'and UID:',
         userRecord.uid
       );
-
+  
       // Create custom token
       const customToken = await auth.createCustomToken(userRecord.uid);
-
+  
       console.log('🎉 Sign up completed for:', email, 'with ID:', nextId);
-
+  
       res.json({
         success: true,
         message: 'Account created successfully!',
@@ -61,12 +64,13 @@ class AuthController {
         userId: nextId,
         userDbId: nextId,
         uid: userRecord.uid,
+        username: username || '', // ← tambah di response juga
       });
     } catch (error) {
       console.error('❌ Sign up error:', error.message);
-
+  
       let errorMessage = 'Sign up failed';
-
+  
       if (error.code === 'auth/email-already-exists') {
         errorMessage = 'Email already exists';
       } else if (error.code === 'auth/invalid-email') {
@@ -76,7 +80,7 @@ class AuthController {
       } else {
         errorMessage = `Sign up failed: ${error.message}`;
       }
-
+  
       res.status(400).json({
         success: false,
         error: errorMessage,
@@ -87,38 +91,38 @@ class AuthController {
   async signIn(req, res) {
     try {
       console.log('📨 Sign in attempt:', req.body.email);
-
+  
       const { email, password } = req.body;
-
+  
       if (!email || !password) {
         return res.status(400).json({
           success: false,
           error: 'Please fill all fields',
         });
       }
-
+  
       // Get user by email from Firebase Auth
       console.log('🔍 Looking up user by email...');
       const user = await auth.getUserByEmail(email);
-
+  
       console.log('✅ User found in Auth with UID:', user.uid);
-
+  
       // Get user from database
       const { userId, userData } = await userDao.getUserByEmail(email);
-
+  
       if (!userData) {
         return res.status(400).json({
           success: false,
           error: 'User data not found in database',
         });
       }
-
+  
       // Update last login
       await userDao.updateLastLogin(userId);
-
+  
       // Create custom token
       const customToken = await auth.createCustomToken(user.uid);
-
+  
       console.log(
         '✅ Sign in successful for:',
         email,
@@ -127,11 +131,12 @@ class AuthController {
         'UID:',
         user.uid
       );
-
+  
       res.json({
         success: true,
         message: 'Welcome back!',
         token: customToken,
+        username: userData.username || '', // ← HANDLE JIKA NULL
         userId: userId,
         userDbId: userId,
         uid: user.uid,
