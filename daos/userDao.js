@@ -44,6 +44,24 @@ class UserDao {
     return { userId, userData };
   }
 
+  async getUserByUsername(username) {
+    const usersRef = db.ref('users');
+    const snapshot = await usersRef
+      .orderByChild('username')
+      .equalTo(username)
+      .once('value');
+
+    let userData = null;
+    let userId = null;
+
+    snapshot.forEach((childSnapshot) => {
+      userId = childSnapshot.key;
+      userData = childSnapshot.val();
+    });
+
+    return { userId, userData };
+  }
+
   async getUserByUid(uid) {
     const usersRef = db.ref('users');
     const snapshot = await usersRef
@@ -73,6 +91,12 @@ class UserDao {
     await userRef.update({
       lastLogin: new Date().toISOString(),
     });
+  }
+
+  async updateUser(userId, updateData) {
+    const userRef = db.ref('users/' + userId);
+    await userRef.update(updateData);
+    return updateData;
   }
 }
 
