@@ -1,4 +1,5 @@
 const dogDao = require('../daos/dogDao');
+const cloudinary = require('../config/cloudinary');
 
 class DogController {
   async addDog(req, res) {
@@ -12,7 +13,7 @@ class DogController {
         birthDate,
         photo,
         weight,
-        gender, // NEW: Gender field
+        gender,
         schedule,
       } = req.body;
 
@@ -26,6 +27,26 @@ class DogController {
       // Get next ID from counter
       const nextId = await dogDao.getNextDogId();
 
+      // Handle photo upload if provided
+      let photoUrl = photo || '';
+      
+      // If photo is base64 string, upload to Cloudinary
+      if (photo && photo.startsWith('data:image')) {
+        try {
+          console.log('📤 Uploading dog photo to Cloudinary...');
+          const uploadResult = await cloudinary.uploader.upload(photo, {
+            folder: 'dog_photos',
+            public_id: `dog_${nextId}_${Date.now()}`,
+            overwrite: true,
+          });
+          photoUrl = uploadResult.secure_url;
+          console.log('✅ Dog photo uploaded:', photoUrl);
+        } catch (uploadError) {
+          console.error('❌ Photo upload failed:', uploadError.message);
+          // Continue without photo if upload fails
+        }
+      }
+
       // Save dog data to database with new fields
       const dogData = {
         dogId: nextId,
@@ -33,13 +54,15 @@ class DogController {
         breed: breed || '',
         age: age || 0,
         birthDate: birthDate || '',
-        photo: photo || '',
+        photo: photoUrl, // Use uploaded URL or existing URL
         weight: weight || 0,
-        gender: gender || '', // NEW: Gender field (male/female)
+        gender: gender || '',
         schedule: schedule || {
           eat: [],
           walk: [],
           sleep: [],
+          medicine: [],
+          groom: []
         },
         ownerId: req.userId,
         createdAt: new Date().toISOString(),
@@ -82,7 +105,7 @@ class DogController {
         birthDate,
         photo,
         weight,
-        gender, // NEW: Gender field
+        gender,
         schedule,
       } = req.body;
 
@@ -103,15 +126,36 @@ class DogController {
         });
       }
 
+      // Handle photo upload if new photo provided
+      let photoUrl = photo;
+      
+      // If photo is base64 string (new upload), upload to Cloudinary
+      if (photo && photo.startsWith('data:image') && photo !== existingDog.photo) {
+        try {
+          console.log('📤 Uploading updated dog photo to Cloudinary...');
+          const uploadResult = await cloudinary.uploader.upload(photo, {
+            folder: 'dog_photos',
+            public_id: `dog_${dogId}_${Date.now()}`,
+            overwrite: true,
+          });
+          photoUrl = uploadResult.secure_url;
+          console.log('✅ Dog photo updated:', photoUrl);
+        } catch (uploadError) {
+          console.error('❌ Photo upload failed:', uploadError.message);
+          // Keep existing photo if upload fails
+          photoUrl = existingDog.photo;
+        }
+      }
+
       // Update dog data
       const updateData = {
         ...(name && { name }),
         ...(breed !== undefined && { breed }),
         ...(age !== undefined && { age }),
         ...(birthDate !== undefined && { birthDate }),
-        ...(photo !== undefined && { photo }),
+        ...(photoUrl !== undefined && { photo: photoUrl }),
         ...(weight !== undefined && { weight }),
-        ...(gender !== undefined && { gender }), // NEW: Gender field
+        ...(gender !== undefined && { gender }),
         ...(schedule !== undefined && { schedule }),
         updatedAt: new Date().toISOString(),
       };
@@ -135,6 +179,7 @@ class DogController {
     }
   }
 
+  // ... getMyDogs, getDogById, deleteDog methods remain the same
   async getMyDogs(req, res) {
     try {
       const ownerId = req.userId;
@@ -195,6 +240,18 @@ class DogController {
           success: false,
           error: 'You do not have permission to delete this dog',
         });
+      }
+
+      // Delete photo from Cloudinary if exists
+      if (existingDog.photo && existingDog.photo.includes('cloudinary')) {
+        try {
+          const publicId = existingDog.photo.split('/').pop().split('.')[0];
+          await cloudinary.uploader.destroy(publicId);
+          console.log('✅ Dog photo deleted from Cloudinary');
+        } catch (deleteError) {
+          console.error('❌ Photo deletion failed:', deleteError.message);
+          // Continue with dog deletion even if photo deletion fails
+        }
       }
 
       await dogDao.deleteDog(dogId);
