@@ -80,6 +80,14 @@ class UserDao {
     return { userId, userData };
   }
 
+  async updateProfilePicture(userId, imageUrl) {
+    const userRef = db.ref('users/' + userId);
+    await userRef.update({
+      profilePicture: imageUrl,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
   async getAllUsers() {
     const usersRef = db.ref('users');
     const snapshot = await usersRef.once('value');
@@ -101,3 +109,4 @@ class UserDao {
 }
 
 module.exports = new UserDao();
+
