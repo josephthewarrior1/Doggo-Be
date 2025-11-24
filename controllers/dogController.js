@@ -179,7 +179,6 @@ class DogController {
     }
   }
 
-  // ... getMyDogs, getDogById, deleteDog methods remain the same
   async getMyDogs(req, res) {
     try {
       const ownerId = req.userId;
@@ -268,6 +267,318 @@ class DogController {
       res.status(500).json({
         success: false,
         error: error.message,
+      });
+    }
+  }
+
+  async getSchedules(req, res) {
+    try {
+      console.log('📅 Get schedules attempt for dog:', req.params.id);
+  
+      const dogId = req.params.id;
+  
+      // Check if dog exists and belongs to user
+      const existingDog = await dogDao.getDogById(dogId);
+  
+      if (!existingDog) {
+        return res.status(404).json({
+          success: false,
+          error: 'Dog not found',
+        });
+      }
+  
+      if (existingDog.ownerId !== req.userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'You do not have permission to view this dog',
+        });
+      }
+  
+      const schedules = existingDog.schedule || {
+        eat: [],
+        walk: [],
+        sleep: [],
+        medicine: [],
+        groom: []
+      };
+  
+      console.log('✅ Schedules retrieved for dog:', dogId);
+  
+      res.json({
+        success: true,
+        schedules: schedules,
+        dogId: dogId,
+      });
+    } catch (error) {
+      console.error('❌ Get schedules error:', error.message);
+  
+      res.status(400).json({
+        success: false,
+        error: `Get schedules failed: ${error.message}`,
+      });
+    }
+  }
+
+  // NEW SCHEDULE METHODS
+  async addSchedule(req, res) {
+    try {
+      console.log('📅 Add schedule attempt for dog:', req.params.id);
+
+      const dogId = req.params.id;
+      const { scheduleType, time, description } = req.body;
+
+      // Validasi input
+      if (!scheduleType || !time) {
+        return res.status(400).json({
+          success: false,
+          error: 'Schedule type and time are required',
+        });
+      }
+
+      // Validasi schedule type
+      const validScheduleTypes = ['eat', 'walk', 'sleep', 'medicine', 'groom'];
+      if (!validScheduleTypes.includes(scheduleType)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid schedule type. Must be one of: ${validScheduleTypes.join(', ')}`,
+        });
+      }
+
+      // Check if dog exists and belongs to user
+      const existingDog = await dogDao.getDogById(dogId);
+
+      if (!existingDog) {
+        return res.status(404).json({
+          success: false,
+          error: 'Dog not found',
+        });
+      }
+
+      if (existingDog.ownerId !== req.userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'You do not have permission to update this dog',
+        });
+      }
+
+      // Buat schedule item baru
+      const newScheduleItem = {
+        id: Date.now().toString(), // ID unik untuk schedule item
+        time: time,
+        description: description || '',
+        createdAt: new Date().toISOString(),
+      };
+
+      // Ambil schedule yang ada atau buat yang baru
+      const currentSchedule = existingDog.schedule || {
+        eat: [],
+        walk: [],
+        sleep: [],
+        medicine: [],
+        groom: []
+      };
+
+      // Tambahkan schedule item ke type yang sesuai
+      if (!currentSchedule[scheduleType]) {
+        currentSchedule[scheduleType] = [];
+      }
+
+      currentSchedule[scheduleType].push(newScheduleItem);
+
+      // Update dog data dengan schedule baru
+      const updateData = {
+        schedule: currentSchedule,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await dogDao.updateDog(dogId, updateData);
+
+      console.log('✅ Schedule added for dog:', dogId, 'Type:', scheduleType);
+
+      res.json({
+        success: true,
+        message: 'Schedule added successfully!',
+        scheduleType: scheduleType,
+        scheduleItem: newScheduleItem,
+        dogId: dogId,
+      });
+    } catch (error) {
+      console.error('❌ Add schedule error:', error.message);
+
+      res.status(400).json({
+        success: false,
+        error: `Add schedule failed: ${error.message}`,
+      });
+    }
+  }
+
+  async updateSchedule(req, res) {
+    try {
+      console.log('📅 Update schedule attempt for dog:', req.params.id);
+
+      const dogId = req.params.id;
+      const { scheduleType, scheduleItemId, time, description } = req.body;
+
+      // Validasi input
+      if (!scheduleType || !scheduleItemId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Schedule type and schedule item ID are required',
+        });
+      }
+
+      // Check if dog exists and belongs to user
+      const existingDog = await dogDao.getDogById(dogId);
+
+      if (!existingDog) {
+        return res.status(404).json({
+          success: false,
+          error: 'Dog not found',
+        });
+      }
+
+      if (existingDog.ownerId !== req.userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'You do not have permission to update this dog',
+        });
+      }
+
+      // Ambil schedule yang ada
+      const currentSchedule = existingDog.schedule || {
+        eat: [],
+        walk: [],
+        sleep: [],
+        medicine: [],
+        groom: []
+      };
+
+      // Cari schedule item berdasarkan ID
+      const scheduleItems = currentSchedule[scheduleType] || [];
+      const scheduleItemIndex = scheduleItems.findIndex(item => item.id === scheduleItemId);
+
+      if (scheduleItemIndex === -1) {
+        return res.status(404).json({
+          success: false,
+          error: 'Schedule item not found',
+        });
+      }
+
+      // Update schedule item
+      if (time !== undefined) {
+        scheduleItems[scheduleItemIndex].time = time;
+      }
+      if (description !== undefined) {
+        scheduleItems[scheduleItemIndex].description = description;
+      }
+      scheduleItems[scheduleItemIndex].updatedAt = new Date().toISOString();
+
+      currentSchedule[scheduleType] = scheduleItems;
+
+      // Update dog data
+      const updateData = {
+        schedule: currentSchedule,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await dogDao.updateDog(dogId, updateData);
+
+      console.log('✅ Schedule updated for dog:', dogId);
+
+      res.json({
+        success: true,
+        message: 'Schedule updated successfully!',
+        scheduleType: scheduleType,
+        scheduleItem: scheduleItems[scheduleItemIndex],
+        dogId: dogId,
+      });
+    } catch (error) {
+      console.error('❌ Update schedule error:', error.message);
+
+      res.status(400).json({
+        success: false,
+        error: `Update schedule failed: ${error.message}`,
+      });
+    }
+  }
+
+  async deleteSchedule(req, res) {
+    try {
+      console.log('📅 Delete schedule attempt for dog:', req.params.id);
+
+      const dogId = req.params.id;
+      const { scheduleType, scheduleItemId } = req.body;
+
+      // Validasi input
+      if (!scheduleType || !scheduleItemId) {
+        return res.status(400).json({
+          success: false,
+          error: 'Schedule type and schedule item ID are required',
+        });
+      }
+
+      // Check if dog exists and belongs to user
+      const existingDog = await dogDao.getDogById(dogId);
+
+      if (!existingDog) {
+        return res.status(404).json({
+          success: false,
+          error: 'Dog not found',
+        });
+      }
+
+      if (existingDog.ownerId !== req.userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'You do not have permission to update this dog',
+        });
+      }
+
+      // Ambil schedule yang ada
+      const currentSchedule = existingDog.schedule || {
+        eat: [],
+        walk: [],
+        sleep: [],
+        medicine: [],
+        groom: []
+      };
+
+      // Filter out schedule item yang akan dihapus
+      const scheduleItems = currentSchedule[scheduleType] || [];
+      const filteredItems = scheduleItems.filter(item => item.id !== scheduleItemId);
+
+      if (scheduleItems.length === filteredItems.length) {
+        return res.status(404).json({
+          success: false,
+          error: 'Schedule item not found',
+        });
+      }
+
+      currentSchedule[scheduleType] = filteredItems;
+
+      // Update dog data
+      const updateData = {
+        schedule: currentSchedule,
+        updatedAt: new Date().toISOString(),
+      };
+
+      await dogDao.updateDog(dogId, updateData);
+
+      console.log('✅ Schedule deleted for dog:', dogId);
+
+      res.json({
+        success: true,
+        message: 'Schedule deleted successfully!',
+        scheduleType: scheduleType,
+        scheduleItemId: scheduleItemId,
+        dogId: dogId,
+      });
+    } catch (error) {
+      console.error('❌ Delete schedule error:', error.message);
+
+      res.status(400).json({
+        success: false,
+        error: `Delete schedule failed: ${error.message}`,
       });
     }
   }
