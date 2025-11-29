@@ -147,32 +147,6 @@ class UserController {
         });
       }
 
-      // NEW: Verify password if provided
-      if (updateData.password) {
-        try {
-          // You need to verify the password with Firebase Auth
-          // This requires the user's Firebase UID
-          const userByUid = await userDao.getUserByUid(existingUser.uid);
-
-          // Verify password with Firebase (pseudo-code, depends on your auth setup)
-          const isPasswordValid = await verifyPassword(
-            existingUser.email,
-            updateData.password
-          );
-          if (!isPasswordValid) {
-            return res.status(401).json({
-              success: false,
-              error: 'Invalid password',
-            });
-          }
-        } catch (error) {
-          return res.status(401).json({
-            success: false,
-            error: 'Password verification failed',
-          });
-        }
-      }
-
       // Jika update username, cek apakah username sudah dipakai user lain
       if (
         updateData.username &&
@@ -189,7 +163,7 @@ class UserController {
         }
       }
 
-      // NEW: Handle email update in Firebase Auth
+      // Jika update email, cek apakah email sudah dipakai user lain
       if (updateData.email && updateData.email !== existingUser.email) {
         const existingEmail = await userDao.getUserByEmail(updateData.email);
         if (existingEmail.userData) {
@@ -198,26 +172,10 @@ class UserController {
             error: 'Email already exists',
           });
         }
-
-        // Update email in Firebase Auth
-        try {
-          const admin = require('firebase-admin');
-          await admin.auth().updateUser(existingUser.uid, {
-            email: updateData.email,
-          });
-        } catch (firebaseError) {
-          return res.status(500).json({
-            success: false,
-            error: 'Failed to update email in authentication system',
-          });
-        }
       }
 
-      // Remove password from updateData before saving to database
-      const { password, ...dataToUpdate } = updateData;
-
       const updatedUser = await userDao.updateUser(userId, {
-        ...dataToUpdate,
+        ...updateData,
         updatedAt: new Date().toISOString(),
       });
 
