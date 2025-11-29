@@ -91,7 +91,9 @@ class UserController {
 
   async getUserByUsername(req, res) {
     try {
-      const { userId, userData } = await userDao.getUserByUsername(req.params.username);
+      const { userId, userData } = await userDao.getUserByUsername(
+        req.params.username
+      );
 
       if (!userData) {
         return res.status(404).json({
@@ -104,7 +106,7 @@ class UserController {
         success: true,
         user: {
           id: userId,
-          ...userData
+          ...userData,
         },
       });
     } catch (error) {
@@ -145,9 +147,40 @@ class UserController {
         });
       }
 
+      // NEW: Verify password if provided
+      if (updateData.password) {
+        try {
+          // You need to verify the password with Firebase Auth
+          // This requires the user's Firebase UID
+          const userByUid = await userDao.getUserByUid(existingUser.uid);
+
+          // Verify password with Firebase (pseudo-code, depends on your auth setup)
+          const isPasswordValid = await verifyPassword(
+            existingUser.email,
+            updateData.password
+          );
+          if (!isPasswordValid) {
+            return res.status(401).json({
+              success: false,
+              error: 'Invalid password',
+            });
+          }
+        } catch (error) {
+          return res.status(401).json({
+            success: false,
+            error: 'Password verification failed',
+          });
+        }
+      }
+
       // Jika update username, cek apakah username sudah dipakai user lain
-      if (updateData.username && updateData.username !== existingUser.username) {
-        const existingUsername = await userDao.getUserByUsername(updateData.username);
+      if (
+        updateData.username &&
+        updateData.username !== existingUser.username
+      ) {
+        const existingUsername = await userDao.getUserByUsername(
+          updateData.username
+        );
         if (existingUsername.userData) {
           return res.status(409).json({
             success: false,
@@ -156,7 +189,7 @@ class UserController {
         }
       }
 
-      // Jika update email, cek apakah email sudah dipakai user lain
+      // NEW: Handle email update in Firebase Auth
       if (updateData.email && updateData.email !== existingUser.email) {
         const existingEmail = await userDao.getUserByEmail(updateData.email);
         if (existingEmail.userData) {
@@ -165,10 +198,26 @@ class UserController {
             error: 'Email already exists',
           });
         }
+
+        // Update email in Firebase Auth
+        try {
+          const admin = require('firebase-admin');
+          await admin.auth().updateUser(existingUser.uid, {
+            email: updateData.email,
+          });
+        } catch (firebaseError) {
+          return res.status(500).json({
+            success: false,
+            error: 'Failed to update email in authentication system',
+          });
+        }
       }
 
+      // Remove password from updateData before saving to database
+      const { password, ...dataToUpdate } = updateData;
+
       const updatedUser = await userDao.updateUser(userId, {
-        ...updateData,
+        ...dataToUpdate,
         updatedAt: new Date().toISOString(),
       });
 
